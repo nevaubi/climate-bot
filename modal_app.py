@@ -79,27 +79,33 @@ def _setup():
     if os.path.exists(vol_db) and not os.path.exists(local_db):
         shutil.copy2(vol_db, local_db)
 
-    # Copy calibration from volume if newer
-    vol_cal = "/data/calibration.json"
-    local_cal = "/app/data/calibration.json"
-    if os.path.exists(vol_cal):
-        shutil.copy2(vol_cal, local_cal)
+    # Copy calibration and optimized weights from volume if they exist
+    for filename in ["calibration.json", "optimized_weights.json"]:
+        vol_path = f"/data/{filename}"
+        local_path = f"/app/data/{filename}"
+        if os.path.exists(vol_path):
+            shutil.copy2(vol_path, local_path)
 
 
 def _persist():
-    """Save DB and calibration back to persistent volume."""
+    """Save DB, calibration, and optimized weights back to persistent volume."""
     import shutil
     from pathlib import Path
 
     Path("/data").mkdir(exist_ok=True)
 
-    local_db = "/app/data/bot.db"
-    if Path(local_db).exists():
-        shutil.copy2(local_db, "/data/bot.db")
+    files_to_persist = [
+        ("/app/data/bot.db", "/data/bot.db"),
+        ("/app/data/calibration.json", "/data/calibration.json"),
+        ("/app/data/optimized_weights.json", "/data/optimized_weights.json"),
+    ]
 
-    local_cal = "/app/data/calibration.json"
-    if Path(local_cal).exists():
-        shutil.copy2(local_cal, "/data/calibration.json")
+    for src, dst in files_to_persist:
+        if Path(src).exists():
+            try:
+                shutil.copy2(src, dst)
+            except Exception as e:
+                print(f"[PERSIST] ERROR copying {src} -> {dst}: {e}")
 
 
 def _should_scan():
@@ -134,11 +140,11 @@ def _send_webhook(message: str):
     image=image,
     volumes={"/data": volume},
     secrets=[secret],
-    schedule=modal.Cron("* 6-23 * * *"),
+    schedule=modal.Cron("* * * * *"),
     timeout=120,
 )
 def scan_cycle():
-    """Run one scan cycle. Scheduled every minute during market hours."""
+    """Run one scan cycle. Scheduled every minute; _should_scan() gates on ET hours."""
     if not _should_scan():
         return
 

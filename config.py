@@ -222,9 +222,23 @@ LEAD_TIME_WEIGHTS = {
 }
 
 
+def _load_optimized_weights():
+    """Load optimized weights from auto_optimize.py output, if available."""
+    opt_path = Path(__file__).parent / "data" / "optimized_weights.json"
+    if not opt_path.exists():
+        return None
+    try:
+        return json.loads(opt_path.read_text())
+    except (json.JSONDecodeError, KeyError):
+        return None
+
+
 def get_model_weights(lead_days: int = 1) -> dict:
     """
     Get model weights appropriate for the forecast lead time.
+
+    Loads from optimized_weights.json if available (auto_optimize output),
+    otherwise falls back to hardcoded LEAD_TIME_WEIGHTS.
 
     Args:
         lead_days: 0=same-day, 1=next-day, 2+=extended range
@@ -232,6 +246,29 @@ def get_model_weights(lead_days: int = 1) -> dict:
     Returns:
         dict of {model_name: weight}
     """
+    # Try loading optimized weights first
+    opt = _load_optimized_weights()
+    if opt and "model_weights" in opt:
+        base = dict(opt["model_weights"])
+        # Apply lead-time scaling factors
+        factors = opt.get("lead_time_factors", {})
+        if lead_days <= 0:
+            ref = LEAD_TIME_WEIGHTS[0]
+        elif lead_days == 1:
+            ref = LEAD_TIME_WEIGHTS[1]
+        else:
+            ref = LEAD_TIME_WEIGHTS[2]
+        # Scale each model's optimized weight by lead-time ratio
+        result = {}
+        for model in base:
+            if model in ref and model in MODEL_WEIGHTS and MODEL_WEIGHTS[model] > 0:
+                lt_ratio = ref[model] / MODEL_WEIGHTS[model]
+                result[model] = round(base[model] * lt_ratio, 2)
+            else:
+                result[model] = base[model]
+        return result
+
+    # Fallback to hardcoded lead-time weights
     if lead_days <= 0:
         return LEAD_TIME_WEIGHTS[0].copy()
     elif lead_days == 1:

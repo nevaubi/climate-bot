@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 DB_PATH = Path(__file__).parent / "data" / "bot.db"
 CONFIG_PATH = Path(__file__).parent / "config.py"
 CALIBRATION_PATH = Path(__file__).parent / "data" / "calibration.json"
+OPTIMIZED_WEIGHTS_PATH = Path(__file__).parent / "data" / "optimized_weights.json"
 
 # Minimum samples before we start adjusting
 MIN_SAMPLES_FOR_WEIGHTS = 3    # 3 city-days minimum
@@ -133,73 +134,28 @@ def _blend_weights(current, targets, blend_factor=BLEND_FACTOR):
     return blended
 
 
-def _update_config_weights(new_weights):
+def _save_optimized_weights(new_weights, old_weights):
     """
-    Update MODEL_WEIGHTS in config.py.
+    Save optimized weights to a JSON file (persistent across Modal containers).
 
-    Also updates LEAD_TIME_WEIGHTS proportionally.
+    Also computes proportional lead-time weight adjustments.
     """
-    config_text = CONFIG_PATH.read_text()
-
-    # Find and replace MODEL_WEIGHTS dict
-    import re
-
-    # Build new weights string
-    lines = ["MODEL_WEIGHTS = {"]
-    for model, weight in sorted(new_weights.items(), key=lambda x: -x[1]):
-        lines.append(f'    "{model}": {weight},')
-    lines.append("}")
-    new_block = "\n".join(lines)
-
-    # Replace the MODEL_WEIGHTS block
-    pattern = r"MODEL_WEIGHTS\s*=\s*\{[^}]+\}"
-    if re.search(pattern, config_text):
-        config_text = re.sub(pattern, new_block, config_text, count=1)
-        CONFIG_PATH.write_text(config_text)
-        return True
-
-    return False
-
-
-def _update_lead_time_weights(old_weights, new_weights):
-    """
-    Update LEAD_TIME_WEIGHTS proportionally based on weight changes.
-
-    If a model's default weight changed by factor X, apply the same
-    factor to all lead-time tiers.
-    """
-    config_text = CONFIG_PATH.read_text()
-
+    # Compute lead-time scale factors from default weight changes
+    lead_time_factors = {}
     for model in new_weights:
         if model in old_weights and old_weights[model] > 0:
             factor = new_weights[model] / old_weights[model]
-            if abs(factor - 1.0) < 0.01:
-                continue  # No meaningful change
+            if abs(factor - 1.0) >= 0.01:
+                lead_time_factors[model] = round(factor, 3)
 
-            # Find all occurrences of this model in LEAD_TIME_WEIGHTS and scale
-            import re
-            pattern = rf'("{model}":\s*)([\d.]+)'
+    data = {
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "model_weights": {k: round(v, 2) for k, v in new_weights.items()},
+        "lead_time_factors": lead_time_factors,
+    }
 
-            def replacer(match):
-                prefix = match.group(1)
-                old_val = float(match.group(2))
-                new_val = round(max(MIN_WEIGHT, min(MAX_WEIGHT, old_val * factor)), 1)
-                return f"{prefix}{new_val}"
-
-            # Only replace within LEAD_TIME_WEIGHTS section
-            lt_start = config_text.find("LEAD_TIME_WEIGHTS")
-            if lt_start >= 0:
-                lt_section = config_text[lt_start:]
-                lt_end_marker = "\ndef "
-                lt_end = lt_section.find(lt_end_marker)
-                if lt_end < 0:
-                    lt_end = len(lt_section)
-
-                lt_block = lt_section[:lt_end]
-                updated_block = re.sub(pattern, replacer, lt_block)
-                config_text = config_text[:lt_start] + updated_block + lt_section[lt_end:]
-
-    CONFIG_PATH.write_text(config_text)
+    OPTIMIZED_WEIGHTS_PATH.write_text(json.dumps(data, indent=2))
+    return True
 
 
 def run_optimization():
@@ -242,12 +198,11 @@ def run_optimization():
         if abs(delta) > 0.02:
             changes.append(f"{model}: {curr:.1f}->{new:.1f}")
 
-    # 3. Apply weight changes
+    # 3. Apply weight changes (save to JSON file, not config.py)
     if changes:
         old_weights = dict(current)
-        _update_config_weights(new_weights)
-        _update_lead_time_weights(old_weights, new_weights)
-        print(f"\n  Updated {len(changes)} model weight(s) in config.py")
+        _save_optimized_weights(new_weights, old_weights)
+        print(f"\n  Saved {len(changes)} model weight(s) to optimized_weights.json")
     else:
         print(f"\n  No significant weight changes needed")
 
