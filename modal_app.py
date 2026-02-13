@@ -17,7 +17,7 @@ import modal
 
 app = modal.App("climate-bot")
 
-# Modal image with all dependencies
+# Modal image with all dependencies + local bot code
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
@@ -27,6 +27,17 @@ image = (
         "scipy>=1.12.0",
         "cryptography>=42.0.0",
     )
+    .add_local_file("config.py", "/app/config.py")
+    .add_local_file("db.py", "/app/db.py")
+    .add_local_file("kalshi_client.py", "/app/kalshi_client.py")
+    .add_local_file("scanner.py", "/app/scanner.py")
+    .add_local_file("weather.py", "/app/weather.py")
+    .add_local_file("resolve.py", "/app/resolve.py")
+    .add_local_file("calibrate.py", "/app/calibrate.py")
+    .add_local_file("analytics.py", "/app/analytics.py")
+    .add_local_file("backtest.py", "/app/backtest.py")
+    .add_local_file("auto_optimize.py", "/app/auto_optimize.py")
+    .add_local_file("data/calibration.json", "/app/data/calibration.json")
 )
 
 # Persistent volume for database and calibration data
@@ -35,24 +46,11 @@ volume = modal.Volume.from_name("climate-bot-data", create_if_missing=True)
 # Secret for API keys
 secret = modal.Secret.from_name("climate-bot-secrets")
 
-# Mount the bot code
-code_mount = modal.Mount.from_local_dir(
-    ".",
-    remote_path="/app",
-    condition=lambda path: (
-        path.endswith(".py")
-        and not path.startswith("test_")
-        and not path.startswith("debug_")
-        and not path.startswith("diagnose_")
-        and not path.startswith("modal_")
-        and ".claude" not in path
-    ),
-)
-
 
 def _setup():
-    """Common setup: ensure data directory exists, copy DB from volume."""
+    """Common setup: ensure data directory exists, write key file, copy DB from volume."""
     import os
+    import base64
     import shutil
     from pathlib import Path
 
@@ -62,16 +60,29 @@ def _setup():
     Path("/app/data").mkdir(exist_ok=True)
     Path("/app/logs").mkdir(exist_ok=True)
 
+    # Write private key from base64 env var (Modal stores it as a secret)
+    key_b64 = os.environ.get("KALSHI_PRIVATE_KEY_B64", "")
+    key_path = "/app/kalshi-key.pem"
+    if key_b64 and not os.path.exists(key_path):
+        key_data = base64.b64decode(key_b64)
+        with open(key_path, "wb") as f:
+            f.write(key_data)
+        os.chmod(key_path, 0o600)
+
+    # Override paths for Modal environment (Git Bash may mangle /app/ paths in secrets)
+    os.environ["KALSHI_PRIVATE_KEY_PATH"] = key_path
+    os.environ.setdefault("PAPER_MODE", "false")
+
     # Copy DB from persistent volume if it exists
     vol_db = "/data/bot.db"
     local_db = "/app/data/bot.db"
     if os.path.exists(vol_db) and not os.path.exists(local_db):
         shutil.copy2(vol_db, local_db)
 
-    # Copy calibration from volume
+    # Copy calibration from volume if newer
     vol_cal = "/data/calibration.json"
     local_cal = "/app/data/calibration.json"
-    if os.path.exists(vol_cal) and not os.path.exists(local_cal):
+    if os.path.exists(vol_cal):
         shutil.copy2(vol_cal, local_cal)
 
 
@@ -121,10 +132,9 @@ def _send_webhook(message: str):
 
 @app.function(
     image=image,
-    mounts=[code_mount],
     volumes={"/data": volume},
     secrets=[secret],
-    schedule=modal.Cron("* 6-23 * * *"),  # Every minute, 6am-11pm ET (UTC adjusted by Modal)
+    schedule=modal.Cron("* 6-23 * * *"),
     timeout=120,
 )
 def scan_cycle():
@@ -156,7 +166,6 @@ def scan_cycle():
 
 @app.function(
     image=image,
-    mounts=[code_mount],
     volumes={"/data": volume},
     secrets=[secret],
     schedule=modal.Cron("0 16 * * *"),  # 11:00 AM ET = 16:00 UTC
@@ -185,7 +194,6 @@ def resolve():
 
 @app.function(
     image=image,
-    mounts=[code_mount],
     volumes={"/data": volume},
     secrets=[secret],
     schedule=modal.Cron("30 16 * * *"),  # 11:30 AM ET = 16:30 UTC
@@ -208,7 +216,6 @@ def calibrate():
 
 @app.function(
     image=image,
-    mounts=[code_mount],
     volumes={"/data": volume},
     secrets=[secret],
     schedule=modal.Cron("45 16 * * *"),  # 11:45 AM ET = 16:45 UTC
@@ -234,7 +241,6 @@ def optimize():
 
 @app.function(
     image=image,
-    mounts=[code_mount],
     volumes={"/data": volume},
     secrets=[secret],
     timeout=120,
