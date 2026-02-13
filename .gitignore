@@ -1,0 +1,38 @@
+# Environment and secrets
+.env
+*.pem
+*.key
+
+# Database (contains trade history and bankroll)
+data/bot.db
+
+# Logs
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Debug/test scripts (not part of core bot)
+test_*.py
+debug_*.py
+diagnose_*.py
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude worktrees
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+nul
