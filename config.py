@@ -23,10 +23,10 @@ KALSHI_BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
 # --- Trading ---
 PAPER_MODE = os.getenv("PAPER_MODE", "true").lower() == "true"
 STARTING_BANKROLL = 150.00  # USD (actual Kalshi balance as of 2026-02-13)
-EDGE_THRESHOLD = 0.10  # minimum edge to trade (after fees)
+EDGE_THRESHOLD = 0.12  # minimum edge to trade (after fees)
 KELLY_FRACTION = 0.15  # 15% Kelly (conservative for early live trading)
 MAX_POSITION_PER_CITY = 0.20  # max 20% of bankroll on one city
-MAX_POSITION_PER_BRACKET = 0.12  # max 12% of bankroll on one bracket
+MAX_POSITION_PER_BRACKET = 0.06  # max 6% of bankroll on one bracket (spread trades across the day)
 MAX_TOTAL_EXPOSURE = 0.40  # max 40% of bankroll deployed across ALL trades
 MAX_CONTRACTS_PER_TRADE = 30  # hard cap on contracts per trade
 SCAN_INTERVAL_SECONDS = 45  # how often to poll markets

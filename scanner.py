@@ -1163,24 +1163,25 @@ def main():
     client = KalshiClient()
     print("[OK] Kalshi client initialized")
 
-    # Get live balance
+    # Sync bankroll with actual Kalshi balance (detects deposits/withdrawals)
     try:
         bal = client.get_balance()
         balance_usd = bal.get("balance", 0) / 100.0
-        print(f"[OK] Kalshi balance: ${balance_usd:.2f}")
+        portfolio_usd = bal.get("portfolio_value", 0) / 100.0
+        bankroll = balance_usd + portfolio_usd
+        print(f"[OK] Kalshi balance: ${balance_usd:.2f} cash + ${portfolio_usd:.2f} positions = ${bankroll:.2f}")
+        if bankroll > 0:
+            db.update_bankroll(bankroll, f"Synced from Kalshi (cash=${balance_usd:.2f} + positions=${portfolio_usd:.2f})")
     except Exception as e:
-        print(f"[WARN] Could not fetch balance: {e}")
-        balance_usd = 0.0
-
-    # Get bankroll from DB or initialize
-    bankroll = db.get_bankroll()
-    if bankroll <= 0:
-        from config import STARTING_BANKROLL
-        bankroll = STARTING_BANKROLL
-        db.update_bankroll(bankroll, "Initial bankroll")
-        print(f"[OK] Initialized bankroll: ${bankroll:.2f}")
-    else:
-        print(f"[OK] Bankroll from DB: ${bankroll:.2f}")
+        print(f"[WARN] Could not sync balance: {e}")
+        bankroll = db.get_bankroll()
+        if bankroll <= 0:
+            from config import STARTING_BANKROLL
+            bankroll = STARTING_BANKROLL
+            db.update_bankroll(bankroll, "Initial bankroll")
+            print(f"[OK] Initialized bankroll: ${bankroll:.2f}")
+        else:
+            print(f"[OK] Bankroll from DB: ${bankroll:.2f}")
 
     # Show city parameters and risk limits
     print(f"\n  City parameters:")

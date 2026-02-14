@@ -158,11 +158,22 @@ def scan_cycle():
     import db
 
     client = KalshiClient()
-    bankroll = db.get_bankroll()
-    if bankroll <= 0:
-        from config import STARTING_BANKROLL
-        bankroll = STARTING_BANKROLL
-        db.update_bankroll(bankroll, "Initial bankroll (Modal)")
+
+    # Sync bankroll with actual Kalshi balance (detects deposits/withdrawals)
+    try:
+        bal = client.get_balance()
+        balance_usd = bal.get("balance", 0) / 100.0
+        portfolio_usd = bal.get("portfolio_value", 0) / 100.0
+        bankroll = balance_usd + portfolio_usd
+        if bankroll > 0:
+            db.update_bankroll(bankroll, f"Synced from Kalshi (cash=${balance_usd:.2f} + positions=${portfolio_usd:.2f})")
+    except Exception as e:
+        print(f"[WARN] Could not sync balance: {e}")
+        bankroll = db.get_bankroll()
+        if bankroll <= 0:
+            from config import STARTING_BANKROLL
+            bankroll = STARTING_BANKROLL
+            db.update_bankroll(bankroll, "Initial bankroll (Modal)")
 
     run_scan_cycle(client, bankroll)
 
@@ -263,11 +274,22 @@ def scan_once():
     import db
 
     client = KalshiClient()
-    bankroll = db.get_bankroll()
-    if bankroll <= 0:
-        from config import STARTING_BANKROLL
-        bankroll = STARTING_BANKROLL
-        db.update_bankroll(bankroll, "Initial bankroll (Modal)")
+
+    # Sync bankroll with actual Kalshi balance
+    try:
+        bal = client.get_balance()
+        balance_usd = bal.get("balance", 0) / 100.0
+        portfolio_usd = bal.get("portfolio_value", 0) / 100.0
+        bankroll = balance_usd + portfolio_usd
+        if bankroll > 0:
+            db.update_bankroll(bankroll, f"Synced from Kalshi (cash=${balance_usd:.2f} + positions=${portfolio_usd:.2f})")
+    except Exception as e:
+        print(f"[WARN] Could not sync balance: {e}")
+        bankroll = db.get_bankroll()
+        if bankroll <= 0:
+            from config import STARTING_BANKROLL
+            bankroll = STARTING_BANKROLL
+            db.update_bankroll(bankroll, "Initial bankroll (Modal)")
 
     run_scan_cycle(client, bankroll)
 
